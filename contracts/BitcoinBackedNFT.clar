@@ -158,3 +158,43 @@
         (ok true)
     )
 )
+
+;; Unstake NFT and calculate rewards
+(define-public (unstake-nft (token-id (buff 32)))
+    (let 
+        (
+            (metadata (unwrap! (map-get? nft-metadata {token-id: token-id}) ERR-NOT-FOUND))
+            (staking-info (unwrap! (map-get? nft-staking {token-id: token-id}) ERR-STAKING-ERROR))
+            (current-block block-height)
+            (stake-start (get stake-start-block staking-info))
+            (staked-blocks (- current-block stake-start))
+            (reward-calculation 
+                (/ (* (get asset-value metadata) staked-blocks) u10000)  ;; Simple reward calculation
+            )
+        )
+        ;; Verify staker
+        (asserts! (is-eq tx-sender (get staked-by staking-info)) ERR-UNAUTHORIZED)
+        
+        ;; Update governance tokens
+        (map-set governance-tokens 
+            tx-sender 
+            (+ (default-to u0 (map-get? governance-tokens tx-sender)) reward-calculation)
+        )
+        
+        ;; Reset NFT staking metadata
+        (map-set nft-metadata 
+            {token-id: token-id}
+            (merge metadata 
+                {
+                    staking-start: none,
+                    staking-rewards: (+ (get staking-rewards metadata) reward-calculation)
+                }
+            )
+        )
+        
+        ;; Remove staking entry
+        (map-delete nft-staking {token-id: token-id})
+        
+        (ok reward-calculation)
+    )
+)
