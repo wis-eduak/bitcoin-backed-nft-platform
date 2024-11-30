@@ -220,3 +220,24 @@
         (ok true)
     )
 )
+
+;; Governance token redemption
+(define-public (redeem-governance-tokens)
+    (let 
+        (
+            (available-tokens (default-to u0 (map-get? governance-tokens tx-sender)))
+        )
+        ;; Check available tokens
+        (asserts! (> available-tokens u0) ERR-INSUFFICIENT-BALANCE)
+        
+        ;; Reset governance tokens
+        (map-set governance-tokens tx-sender u0)
+        
+        ;; Transfer equivalent value or perform governance action
+        ;; Note: In a real implementation, this would interact with a governance mechanism
+        (ok available-tokens)
+    )
+)
+
+;; Initialization
+(print "Bitcoin-Backed NFT Platform Deployed")
