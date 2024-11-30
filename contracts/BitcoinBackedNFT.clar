@@ -53,3 +53,12 @@
     principal 
     uint
 )
+
+;; Read-only functions for metadata retrieval
+(define-read-only (get-nft-metadata (token-id (buff 32)))
+    (map-get? nft-metadata {token-id: token-id})
+)
+
+(define-read-only (get-governance-tokens (user principal))
+    (default-to u0 (map-get? governance-tokens user))
+)
