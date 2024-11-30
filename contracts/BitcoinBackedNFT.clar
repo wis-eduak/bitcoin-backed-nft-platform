@@ -92,3 +92,32 @@
         (ok token-id)
     )
 )
+
+;; Transfer NFT with additional checks
+(define-public (transfer-nft 
+    (token-id (buff 32))
+    (sender principal)
+    (recipient principal)
+)
+    (let 
+        (
+            (metadata (unwrap! (map-get? nft-metadata {token-id: token-id}) ERR-NOT-FOUND))
+        )
+        ;; Verify sender is current owner
+        (asserts! (is-eq sender (get owner metadata)) ERR-UNAUTHORIZED)
+        
+        ;; Ensure no active staking
+        (asserts! (is-none (get staking-start metadata)) ERR-INVALID-TRANSFER)
+        
+        ;; Transfer NFT
+        (try! (nft-transfer? bitcoin-backed-nft token-id sender recipient))
+        
+        ;; Update metadata
+        (map-set nft-metadata 
+            {token-id: token-id}
+            (merge metadata {owner: recipient})
+        )
+        
+        (ok true)
+    )
+)
