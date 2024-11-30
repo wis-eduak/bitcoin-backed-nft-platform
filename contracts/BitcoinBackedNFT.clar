@@ -16,7 +16,7 @@
 
 (define-non-fungible-token bitcoin-backed-nft (buff 32))
 
-;; Constants
+;; Extended Error Constants
 (define-constant CONTRACT-OWNER tx-sender)
 (define-constant ERR-UNAUTHORIZED (err u1))
 (define-constant ERR-NOT-FOUND (err u2))
@@ -24,21 +24,44 @@
 (define-constant ERR-INVALID-TRANSFER (err u4))
 (define-constant ERR-STAKING-ERROR (err u5))
 (define-constant ERR-INSUFFICIENT-BALANCE (err u6))
+(define-constant ERR-INVALID-INPUT (err u7))
+(define-constant ERR-INVALID-TOKEN (err u8))
 
-;; Storage
+;; Input Validation Helper Functions
+(define-private (is-valid-token-id (token-id (buff 32)))
+    (and 
+        (not (is-eq token-id 0x))
+        (< (len token-id) u33)
+    )
+)
+
+(define-private (is-valid-asset-type (asset-type (string-utf8 50)))
+    (and 
+        (> (len asset-type) u0)
+        (<= (len asset-type) u50)
+    )
+)
+
+(define-private (is-valid-asset-value (asset-value uint))
+    (and 
+        (> asset-value u0)
+        (< asset-value u1000000)
+    )
+)
+
+;; Storage Maps
 (define-map nft-metadata 
     {token-id: (buff 32)} 
     {
         owner: principal,
-        asset-type: (string-utf8 50),  ;; Type of real-world asset
-        asset-value: uint,             ;; Monetary value
+        asset-type: (string-utf8 50),
+        asset-value: uint,
         mint-timestamp: uint,
         staking-start: (optional uint),
         staking-rewards: uint
     }
 )
 
-;; Map to track NFT staking
 (define-map nft-staking 
     {token-id: (buff 32)} 
     {
@@ -48,35 +71,42 @@
     }
 )
 
-;; Governance token mapping for staking rewards
 (define-map governance-tokens 
     principal 
     uint
 )
 
-;; Read-only functions for metadata retrieval
+;; Read-only functions with additional safety checks
 (define-read-only (get-nft-metadata (token-id (buff 32)))
-    (map-get? nft-metadata {token-id: token-id})
+    (begin
+        (asserts! (is-valid-token-id token-id) none)
+        (map-get? nft-metadata {token-id: token-id})
+    )
 )
 
 (define-read-only (get-governance-tokens (user principal))
     (default-to u0 (map-get? governance-tokens user))
 )
 
-;; Mint a new Bitcoin-backed NFT
+;; Enhanced Mint Function with Comprehensive Validation
 (define-public (mint-nft 
     (token-id (buff 32))
     (asset-type (string-utf8 50))
     (asset-value uint)
 )
     (begin
+        ;; Validate all inputs
+        (asserts! (is-valid-token-id token-id) ERR-INVALID-TOKEN)
+        (asserts! (is-valid-asset-type asset-type) ERR-INVALID-INPUT)
+        (asserts! (is-valid-asset-value asset-value) ERR-INVALID-INPUT)
+        
         ;; Check if NFT already exists
         (asserts! (is-none (nft-get-owner? bitcoin-backed-nft token-id)) ERR-ALREADY-MINTED)
         
         ;; Mint the NFT
         (try! (nft-mint? bitcoin-backed-nft token-id tx-sender))
         
-        ;; Store NFT metadata
+        ;; Store NFT metadata with validated inputs
         (map-set nft-metadata 
             {token-id: token-id}
             {
@@ -93,7 +123,7 @@
     )
 )
 
-;; Transfer NFT with additional checks
+;; Enhanced Transfer Function
 (define-public (transfer-nft 
     (token-id (buff 32))
     (sender principal)
@@ -103,6 +133,10 @@
         (
             (metadata (unwrap! (map-get? nft-metadata {token-id: token-id}) ERR-NOT-FOUND))
         )
+        ;; Additional input validations
+        (asserts! (is-valid-token-id token-id) ERR-INVALID-TOKEN)
+        (asserts! (not (is-eq sender recipient)) ERR-INVALID-TRANSFER)
+        
         ;; Verify sender is current owner
         (asserts! (is-eq sender (get owner metadata)) ERR-UNAUTHORIZED)
         
@@ -122,13 +156,16 @@
     )
 )
 
-;; Stake NFT for governance and rewards
+;; Enhanced Stake Function
 (define-public (stake-nft (token-id (buff 32)))
     (let 
         (
             (metadata (unwrap! (map-get? nft-metadata {token-id: token-id}) ERR-NOT-FOUND))
             (current-block block-height)
         )
+        ;; Additional input validations
+        (asserts! (is-valid-token-id token-id) ERR-INVALID-TOKEN)
+        
         ;; Verify owner
         (asserts! (is-eq tx-sender (get owner metadata)) ERR-UNAUTHORIZED)
         
@@ -159,7 +196,7 @@
     )
 )
 
-;; Unstake NFT and calculate rewards
+;; Enhanced Unstake Function
 (define-public (unstake-nft (token-id (buff 32)))
     (let 
         (
@@ -169,9 +206,12 @@
             (stake-start (get stake-start-block staking-info))
             (staked-blocks (- current-block stake-start))
             (reward-calculation 
-                (/ (* (get asset-value metadata) staked-blocks) u10000)  ;; Simple reward calculation
+                (/ (* (get asset-value metadata) staked-blocks) u10000)
             )
         )
+        ;; Additional input validations
+        (asserts! (is-valid-token-id token-id) ERR-INVALID-TOKEN)
+        
         ;; Verify staker
         (asserts! (is-eq tx-sender (get staked-by staking-info)) ERR-UNAUTHORIZED)
         
@@ -199,12 +239,15 @@
     )
 )
 
-;; Burn NFT (only by owner)
+;; Enhanced Burn Function
 (define-public (burn-nft (token-id (buff 32)))
     (let 
         (
             (metadata (unwrap! (map-get? nft-metadata {token-id: token-id}) ERR-NOT-FOUND))
         )
+        ;; Additional input validations
+        (asserts! (is-valid-token-id token-id) ERR-INVALID-TOKEN)
+        
         ;; Verify owner
         (asserts! (is-eq tx-sender (get owner metadata)) ERR-UNAUTHORIZED)
         
@@ -221,7 +264,7 @@
     )
 )
 
-;; Governance token redemption
+;; Enhanced Governance Token Redemption
 (define-public (redeem-governance-tokens)
     (let 
         (
@@ -232,12 +275,9 @@
         
         ;; Reset governance tokens
         (map-set governance-tokens tx-sender u0)
-        
-        ;; Transfer equivalent value or perform governance action
-        ;; Note: In a real implementation, this would interact with a governance mechanism
         (ok available-tokens)
     )
 )
 
 ;; Initialization
-(print "Bitcoin-Backed NFT Platform Deployed")
+(print "Bitcoin-Backed NFT Platform Deployed with Enhanced Security")
