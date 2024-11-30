@@ -62,3 +62,33 @@
 (define-read-only (get-governance-tokens (user principal))
     (default-to u0 (map-get? governance-tokens user))
 )
+
+;; Mint a new Bitcoin-backed NFT
+(define-public (mint-nft 
+    (token-id (buff 32))
+    (asset-type (string-utf8 50))
+    (asset-value uint)
+)
+    (begin
+        ;; Check if NFT already exists
+        (asserts! (is-none (nft-get-owner? bitcoin-backed-nft token-id)) ERR-ALREADY-MINTED)
+        
+        ;; Mint the NFT
+        (try! (nft-mint? bitcoin-backed-nft token-id tx-sender))
+        
+        ;; Store NFT metadata
+        (map-set nft-metadata 
+            {token-id: token-id}
+            {
+                owner: tx-sender,
+                asset-type: asset-type,
+                asset-value: asset-value,
+                mint-timestamp: block-height,
+                staking-start: none,
+                staking-rewards: u0
+            }
+        )
+        
+        (ok token-id)
+    )
+)
