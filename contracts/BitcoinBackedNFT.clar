@@ -198,3 +198,25 @@
         (ok reward-calculation)
     )
 )
+
+;; Burn NFT (only by owner)
+(define-public (burn-nft (token-id (buff 32)))
+    (let 
+        (
+            (metadata (unwrap! (map-get? nft-metadata {token-id: token-id}) ERR-NOT-FOUND))
+        )
+        ;; Verify owner
+        (asserts! (is-eq tx-sender (get owner metadata)) ERR-UNAUTHORIZED)
+        
+        ;; Ensure not staked
+        (asserts! (is-none (get staking-start metadata)) ERR-INVALID-TRANSFER)
+        
+        ;; Burn NFT
+        (try! (nft-burn? bitcoin-backed-nft token-id tx-sender))
+        
+        ;; Remove metadata
+        (map-delete nft-metadata {token-id: token-id})
+        
+        (ok true)
+    )
+)
